@@ -1,0 +1,97 @@
+多线程下载器代码
+import queue
+import threading
+import time
+import requests
+import json
+import re
+import os
+
+os.chdir(os.path.dirname(os.path.realpath(__file__)))
+
+class myThread (threading.Thread):
+    def __init__(self, threadID, name, q):
+        threading.Thread.__init__(self)
+        self.threadID = threadID
+        self.name = name
+        self.q = q
+    def run(self):
+        # print ("开启线程：" + self.name)
+        process_data(self.name, self.q)
+        # print ("退出线程：" + self.name)
+
+def process_data(threadName, q):
+    while not exitFlag:
+        queueLock.acquire()
+        if not workQueue.empty():
+            task_arg = q.get()
+            queueLock.release()
+            main(task_arg)
+
+            print ("%s processing %s" % (threadName, '*'*20))
+        else:
+            queueLock.release()
+        time.sleep(1)
+
+def thread_task(threadList,task_args,n):
+    global workQueue,queueLock,exitFlag
+    queueLock = threading.Lock()
+    workQueue = queue.Queue(n)
+    exitFlag = 0
+    threads = []
+    threadID = 1
+    # 创建新线程
+    for tName in threadList:
+        thread = myThread(threadID, tName, workQueue)
+        thread.start()
+        threads.append(thread)
+        threadID += 1
+    # 填充队列
+    queueLock.acquire()
+    for task_arg in task_args:
+        workQueue.put(task_arg)
+    queueLock.release()
+    # 等待队列清空
+    while not workQueue.empty():
+        pass
+    # 通知线程是时候退出
+    exitFlag = 1
+    # 等待所有线程完成
+    for t in threads:
+        t.join()
+    print("退出主线程")
+
+def main(data):  
+        # print(data)      
+        url = data['VideoUrl']
+        id = data['id']
+        title = data['title']
+        if title == "":
+            name = id
+        else:
+            name = title
+        intab = r'[?*/\|.:><]'
+        name = re.sub(intab, "", name).replace(" ","")
+        try:
+            response = requests.get(url, headers=headers)
+        except:
+            print('网页请求错误：\n','*'*100+'\n',name+'\n','*'*100)
+        try:
+            with open (f'{outout_dir}//{name}.mp4','wb') as b:
+                b.write(response.content)
+            print('已下载：',name)
+        except:
+            print('下载错误：\n','*'*100+'\n',name+'\n','*'*100)
+
+if __name__ == '__main__':
+    threadList = []
+    for i in range(50):
+        threadList.append(f'Thread-{i+1}')
+    outout_dir = r'./download_files'
+    from faker import Factory
+    fake = Factory().create('zh_CN')
+    headers = {'User-Agent': fake.user_agent()}
+    with open('data.json','r',encoding='utf-8') as f:
+        data_json = json.load(f)
+    task_args = data_json
+    thread_task(threadList, task_args,len(task_args))
